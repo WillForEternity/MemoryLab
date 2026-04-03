@@ -31,12 +31,16 @@ export function QuestionCard({ video, onSubmit, onNext, isLastVideo, videoIndex,
     const endTime = Date.now()
     const timeTakenMs = endTime - startTime
 
-    // Parse input into words
-    const inputWords = input
-      .toLowerCase()
-      .split(/[\s,]+/)
-      .map((w) => w.trim())
-      .filter((w) => w.length > 0)
+    // Parse input into words (deduplicate so repeating a word doesn't inflate score)
+    const inputWords = [
+      ...new Set(
+        input
+          .toLowerCase()
+          .split(/[\s,]+/)
+          .map((w) => w.trim())
+          .filter((w) => w.length > 0)
+      ),
+    ]
 
     // Check which words are correct
     const correctWords = inputWords.filter((w) =>

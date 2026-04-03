@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useCallback } from "react"
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -9,12 +9,10 @@ import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-  ChartLegend,
-  ChartLegendContent,
   type ChartConfig,
 } from "@/components/ui/chart"
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
-import { ArrowLeft, Users, Clock, Brain, Trash2 } from "lucide-react"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ErrorBar, Cell } from "recharts"
+import { ArrowLeft, Users, Clock, Brain, Trash2, Download, AlertTriangle } from "lucide-react"
 import { useTestStore } from "@/lib/use-test-store"
 import { NOISE_LABELS, NOISE_COLORS, type NoiseType, type ParticipantData } from "@/lib/test-data"
 
@@ -42,6 +40,18 @@ const chartConfig: ChartConfig = {
   },
 }
 
+function mean(arr: number[]): number {
+  if (arr.length === 0) return 0
+  return arr.reduce((a, b) => a + b, 0) / arr.length
+}
+
+function sem(arr: number[]): number {
+  if (arr.length < 2) return 0
+  const m = mean(arr)
+  const variance = arr.reduce((sum, x) => sum + (x - m) ** 2, 0) / (arr.length - 1)
+  return Math.sqrt(variance) / Math.sqrt(arr.length)
+}
+
 export function ResultsDashboard({ onBack, isEmbedded }: ResultsDashboardProps) {
   const { participants, clearAllData, isLoaded } = useTestStore()
 
@@ -50,64 +60,72 @@ export function ResultsDashboard({ onBack, isEmbedded }: ResultsDashboardProps) 
     [participants]
   )
 
-  // Calculate average time by noise type for pie chart
-  const timeByNoiseType = useMemo(() => {
-    const totals: Record<NoiseType, { time: number; count: number }> = {
-      silence: { time: 0, count: 0 },
-      "white-noise": { time: 0, count: 0 },
-      cafe: { time: 0, count: 0 },
-      music: { time: 0, count: 0 },
+  // Collect raw values per noise type for computing means + SEM
+  const raw = useMemo(() => {
+    const data: Record<NoiseType, { correct: number[]; falseAlarms: number[]; timeMs: number[] }> = {
+      silence: { correct: [], falseAlarms: [], timeMs: [] },
+      "white-noise": { correct: [], falseAlarms: [], timeMs: [] },
+      cafe: { correct: [], falseAlarms: [], timeMs: [] },
+      music: { correct: [], falseAlarms: [], timeMs: [] },
     }
-
     completedParticipants.forEach((p) => {
       p.results.forEach((r) => {
-        if (!totals[r.noiseType]) return // skip legacy noise types no longer in use
-        totals[r.noiseType].time += r.timeTakenMs
-        totals[r.noiseType].count += 1
+        if (!data[r.noiseType]) return
+        data[r.noiseType].correct.push(r.correctCount)
+        data[r.noiseType].falseAlarms.push(r.rememberedWords.length - r.correctCount)
+        data[r.noiseType].timeMs.push(r.timeTakenMs)
       })
     })
-
-    return Object.entries(totals)
-      .filter(([, data]) => data.count > 0)
-      .map(([type, data]) => ({
-        name: type,
-        label: NOISE_LABELS[type as NoiseType],
-        value: Math.round(data.time / data.count / 1000), // average seconds
-        fill: NOISE_COLORS[type as NoiseType],
-      }))
+    return data
   }, [completedParticipants])
 
-  // Calculate words remembered by noise type for bar chart
-  const wordsByNoiseType = useMemo(() => {
-    const totals: Record<NoiseType, { correct: number; total: number; count: number }> = {
-      silence: { correct: 0, total: 0, count: 0 },
-      "white-noise": { correct: 0, total: 0, count: 0 },
-      cafe: { correct: 0, total: 0, count: 0 },
-      music: { correct: 0, total: 0, count: 0 },
-    }
+  // Bar chart data: words recalled
+  const wordsChartData = useMemo(() => {
+    return (Object.entries(raw) as [NoiseType, typeof raw.silence][])
+      .filter(([, d]) => d.correct.length > 0)
+      .map(([type, d]) => ({
+        name: NOISE_LABELS[type],
+        avgCorrect: Number(mean(d.correct).toFixed(1)),
+        sem: Number(sem(d.correct).toFixed(2)),
+        fill: NOISE_COLORS[type],
+      }))
+  }, [raw])
 
-    completedParticipants.forEach((p) => {
-      p.results.forEach((r) => {
-        if (!totals[r.noiseType]) return // skip legacy noise types no longer in use
-        totals[r.noiseType].correct += r.correctCount
-        totals[r.noiseType].total += r.totalWords
-        totals[r.noiseType].count += 1
+  // Bar chart data: false alarms
+  const falseAlarmChartData = useMemo(() => {
+    return (Object.entries(raw) as [NoiseType, typeof raw.silence][])
+      .filter(([, d]) => d.falseAlarms.length > 0)
+      .map(([type, d]) => ({
+        name: NOISE_LABELS[type],
+        avgFalseAlarms: Number(mean(d.falseAlarms).toFixed(1)),
+        sem: Number(sem(d.falseAlarms).toFixed(2)),
+        fill: NOISE_COLORS[type],
+      }))
+  }, [raw])
+
+  // Bar chart data: response time (seconds)
+  const timeChartData = useMemo(() => {
+    return (Object.entries(raw) as [NoiseType, typeof raw.silence][])
+      .filter(([, d]) => d.timeMs.length > 0)
+      .map(([type, d]) => {
+        const secs = d.timeMs.map((ms) => ms / 1000)
+        return {
+          name: NOISE_LABELS[type],
+          avgTime: Number(mean(secs).toFixed(1)),
+          sem: Number(sem(secs).toFixed(2)),
+          fill: NOISE_COLORS[type],
+        }
       })
-    })
-
-    return Object.entries(totals)
-      .filter(([, data]) => data.count > 0)
-      .map(([type, data]) => ({
-        name: NOISE_LABELS[type as NoiseType],
-        avgCorrect: Number((data.correct / data.count).toFixed(1)),
-        fill: NOISE_COLORS[type as NoiseType],
-      }))
-  }, [completedParticipants])
+  }, [raw])
 
   // Stats summary
   const stats = useMemo(() => {
     const totalParticipants = completedParticipants.length
     const totalResponses = completedParticipants.reduce((sum, p) => sum + p.results.length, 0)
+    const allCorrect = Object.values(raw).flatMap((d) => d.correct)
+    const allFalseAlarms = Object.values(raw).flatMap((d) => d.falseAlarms)
+    const allTimeMs = Object.values(raw).flatMap((d) => d.timeMs)
+
     const avgAccuracy =
       totalResponses > 0
         ? (
@@ -119,19 +137,50 @@ export function ResultsDashboard({ onBack, isEmbedded }: ResultsDashboardProps) 
             100
           ).toFixed(1)
         : "0"
-    const avgTime =
-      totalResponses > 0
-        ? (
-            completedParticipants.reduce(
-              (sum, p) => sum + p.results.reduce((s, r) => s + r.timeTakenMs, 0),
-              0
-            ) /
-            totalResponses /
-            1000
-          ).toFixed(1)
-        : "0"
+    const avgTime = allTimeMs.length > 0 ? (mean(allTimeMs) / 1000).toFixed(1) : "0"
+    const avgFalseAlarms = allFalseAlarms.length > 0 ? mean(allFalseAlarms).toFixed(1) : "0"
 
-    return { totalParticipants, totalResponses, avgAccuracy, avgTime }
+    return { totalParticipants, totalResponses, avgAccuracy, avgTime, avgFalseAlarms }
+  }, [completedParticipants, raw])
+
+  // CSV export
+  const downloadCsv = useCallback(() => {
+    const headers = [
+      "participant_id",
+      "timestamp",
+      "trial_number",
+      "presentation_order",
+      "noise_type",
+      "correct_count",
+      "total_words",
+      "false_alarm_count",
+      "time_ms",
+      "remembered_words",
+      "target_words",
+    ]
+    const rows = completedParticipants.flatMap((p) =>
+      p.results.map((r, i) => [
+        p.id,
+        new Date(p.timestamp).toISOString(),
+        i + 1,
+        r.presentationOrder,
+        r.noiseType,
+        r.correctCount,
+        r.totalWords,
+        r.rememberedWords.length - r.correctCount,
+        r.timeTakenMs,
+        `"${r.rememberedWords.join(", ")}"`,
+        `"${r.targetWords.join(", ")}"`,
+      ])
+    )
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n")
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `memory-lab-results-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }, [completedParticipants])
 
   if (!isLoaded) {
@@ -169,15 +218,26 @@ export function ResultsDashboard({ onBack, isEmbedded }: ResultsDashboardProps) 
               </div>
             </div>
             {completedParticipants.length > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={clearAllData}
-                className="rounded-full text-destructive hover:text-destructive"
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                Clear Data
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={downloadCsv}
+                  className="rounded-full"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Export CSV
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={clearAllData}
+                  className="rounded-full text-destructive hover:text-destructive"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Clear Data
+                </Button>
+              </div>
             )}
           </div>
         </motion.header>
@@ -207,7 +267,7 @@ export function ResultsDashboard({ onBack, isEmbedded }: ResultsDashboardProps) 
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8"
+              className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8"
             >
               <Card className="rounded-2xl">
                 <CardContent className="pt-6">
@@ -235,7 +295,23 @@ export function ResultsDashboard({ onBack, isEmbedded }: ResultsDashboardProps) 
                       <p className="text-2xl font-bold text-foreground">
                         {stats.avgAccuracy}%
                       </p>
-                      <p className="text-sm text-muted-foreground">Avg Accuracy</p>
+                      <p className="text-sm text-muted-foreground">Avg Recall</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="rounded-2xl">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-xl bg-destructive/10">
+                      <AlertTriangle className="w-5 h-5 text-destructive" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-foreground">
+                        {stats.avgFalseAlarms}
+                      </p>
+                      <p className="text-sm text-muted-foreground">Avg False Alarms</p>
                     </div>
                   </div>
                 </CardContent>
@@ -274,9 +350,37 @@ export function ResultsDashboard({ onBack, isEmbedded }: ResultsDashboardProps) 
               </Card>
             </motion.div>
 
+            {/* Embedded CSV export (when header is hidden) */}
+            {isEmbedded && completedParticipants.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex justify-end gap-2 mb-6"
+              >
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={downloadCsv}
+                  className="rounded-full"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Export CSV
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={clearAllData}
+                  className="rounded-full text-destructive hover:text-destructive"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Clear Data
+                </Button>
+              </motion.div>
+            )}
+
             {/* Charts */}
             <div className="grid md:grid-cols-2 gap-6 mb-8">
-              {/* Pie Chart - Time by Noise Type */}
+              {/* Bar Chart - Words Recalled */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -284,77 +388,118 @@ export function ResultsDashboard({ onBack, isEmbedded }: ResultsDashboardProps) 
               >
                 <Card className="rounded-2xl">
                   <CardHeader>
-                    <CardTitle className="text-lg">Average Response Time by Noise Type</CardTitle>
+                    <CardTitle className="text-lg">Words Recalled by Noise Type</CardTitle>
                     <CardDescription>
-                      How long participants took to recall words (in seconds)
+                      Mean correct words per test (error bars = ±1 SEM)
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <ChartContainer config={chartConfig} className="h-[300px]">
-                      <PieChart>
+                      <BarChart data={wordsChartData} layout="vertical">
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                        <XAxis type="number" domain={[0, 10]} />
+                        <YAxis dataKey="name" type="category" width={100} tickLine={false} />
                         <ChartTooltip
                           content={
                             <ChartTooltipContent
-                              formatter={(value) => `${value}s avg`}
+                              formatter={(value, name) =>
+                                name === "avgCorrect"
+                                  ? `${value} words avg`
+                                  : `±${value}`
+                              }
                             />
                           }
                         />
-                        <Pie
-                          data={timeByNoiseType}
-                          dataKey="value"
-                          nameKey="label"
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={100}
-                          innerRadius={60}
-                          paddingAngle={2}
-                          label={({ label, value }) => `${value}s`}
-                          labelLine={false}
-                        >
-                          {timeByNoiseType.map((entry, index) => (
+                        <Bar dataKey="avgCorrect" radius={[0, 8, 8, 0]}>
+                          {wordsChartData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.fill} />
                           ))}
-                        </Pie>
-                        <ChartLegend content={<ChartLegendContent nameKey="label" />} />
-                      </PieChart>
+                          <ErrorBar dataKey="sem" width={4} strokeWidth={2} stroke="var(--foreground)" />
+                        </Bar>
+                      </BarChart>
                     </ChartContainer>
                   </CardContent>
                 </Card>
               </motion.div>
 
-              {/* Bar Chart - Words Remembered */}
+              {/* Bar Chart - False Alarms */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
+                transition={{ delay: 0.15 }}
               >
                 <Card className="rounded-2xl">
                   <CardHeader>
-                    <CardTitle className="text-lg">Words Remembered by Noise Type</CardTitle>
+                    <CardTitle className="text-lg">False Alarms by Noise Type</CardTitle>
                     <CardDescription>
-                      Average correct words recalled per test
+                      Mean incorrect words submitted per test (error bars = ±1 SEM)
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <ChartContainer config={chartConfig} className="h-[300px]">
-                      <BarChart data={wordsByNoiseType} layout="vertical">
+                      <BarChart data={falseAlarmChartData} layout="vertical">
                         <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                        <XAxis type="number" domain={[0, 5]} />
+                        <XAxis type="number" domain={[0, "auto"]} />
                         <YAxis dataKey="name" type="category" width={100} tickLine={false} />
                         <ChartTooltip
                           content={
                             <ChartTooltipContent
-                              formatter={(value) => `${value} words avg`}
+                              formatter={(value, name) =>
+                                name === "avgFalseAlarms"
+                                  ? `${value} words avg`
+                                  : `±${value}`
+                              }
                             />
                           }
                         />
-                        <Bar
-                          dataKey="avgCorrect"
-                          radius={[0, 8, 8, 0]}
-                        >
-                          {wordsByNoiseType.map((entry, index) => (
+                        <Bar dataKey="avgFalseAlarms" radius={[0, 8, 8, 0]}>
+                          {falseAlarmChartData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.fill} />
                           ))}
+                          <ErrorBar dataKey="sem" width={4} strokeWidth={2} stroke="var(--foreground)" />
+                        </Bar>
+                      </BarChart>
+                    </ChartContainer>
+                  </CardContent>
+                </Card>
+              </motion.div>
+
+              {/* Bar Chart - Response Time */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+                className="md:col-span-2"
+              >
+                <Card className="rounded-2xl">
+                  <CardHeader>
+                    <CardTitle className="text-lg">Response Time by Noise Type</CardTitle>
+                    <CardDescription>
+                      Mean time to submit recall (seconds, error bars = ±1 SEM)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={chartConfig} className="h-[300px]">
+                      <BarChart data={timeChartData} layout="vertical">
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                        <XAxis type="number" domain={[0, "auto"]} />
+                        <YAxis dataKey="name" type="category" width={100} tickLine={false} />
+                        <ChartTooltip
+                          content={
+                            <ChartTooltipContent
+                              formatter={(value, name) =>
+                                name === "avgTime"
+                                  ? `${value}s avg`
+                                  : `±${value}s`
+                              }
+                            />
+                          }
+                        />
+                        <Bar dataKey="avgTime" radius={[0, 8, 8, 0]}>
+                          {timeChartData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.fill} />
+                          ))}
+                          <ErrorBar dataKey="sem" width={4} strokeWidth={2} stroke="var(--foreground)" />
                         </Bar>
                       </BarChart>
                     </ChartContainer>
@@ -405,6 +550,10 @@ function ParticipantCard({
 }) {
   const totalCorrect = participant.results.reduce((sum, r) => sum + r.correctCount, 0)
   const totalWords = participant.results.reduce((sum, r) => sum + r.totalWords, 0)
+  const totalFalseAlarms = participant.results.reduce(
+    (sum, r) => sum + (r.rememberedWords.length - r.correctCount),
+    0
+  )
   const accuracy = ((totalCorrect / totalWords) * 100).toFixed(1)
   const avgTime = (
     participant.results.reduce((sum, r) => sum + r.timeTakenMs, 0) /
@@ -433,7 +582,10 @@ function ParticipantCard({
         </div>
         <div className="flex gap-3">
           <Badge variant="secondary" className="rounded-full">
-            {accuracy}% accuracy
+            {accuracy}% recall
+          </Badge>
+          <Badge variant="outline" className="rounded-full text-destructive">
+            {totalFalseAlarms} false alarm{totalFalseAlarms !== 1 ? "s" : ""}
           </Badge>
           <Badge variant="outline" className="rounded-full">
             {avgTime}s avg
@@ -447,7 +599,7 @@ function ParticipantCard({
           <div
             key={rIdx}
             className="text-center p-2 rounded-lg bg-card"
-            title={`Test ${rIdx + 1}: ${result.correctCount}/${result.totalWords} words - ${NOISE_LABELS[result.noiseType]}`}
+            title={`Test ${rIdx + 1}: ${result.correctCount}/${result.totalWords} correct, ${result.rememberedWords.length - result.correctCount} false — ${NOISE_LABELS[result.noiseType]}`}
           >
             <div
               className="w-full h-2 rounded-full mb-1"

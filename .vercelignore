@@ -1,0 +1,4 @@
+# Local deploy hygiene
+node_modules/
+.next/
+.env*.local

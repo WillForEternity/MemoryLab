@@ -12,13 +12,21 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ErrorBar, Cell } from "recharts"
-import { ArrowLeft, Users, Clock, Brain, Trash2, Download, AlertTriangle } from "lucide-react"
+import { ArrowLeft, Users, Clock, Brain, Trash2, Download, AlertTriangle, VolumeX, Volume2 } from "lucide-react"
 import { useTestStore } from "@/lib/use-test-store"
 import { NOISE_LABELS, NOISE_COLORS, type NoiseType, type ParticipantData } from "@/lib/test-data"
 
 interface ResultsDashboardProps {
   onBack: () => void
   isEmbedded?: boolean
+  /** When provided, the dashboard renders this data instead of the local store. */
+  participantsOverride?: ParticipantData[]
+  /** When provided, enables the per-participant delete button. */
+  onDeleteParticipant?: (id: string) => void
+  /** When provided, enables the per-participant mute toggle. Muted participants are excluded from aggregates. */
+  onToggleMuted?: (id: string, muted: boolean) => void
+  /** Loading state for overridden data. */
+  isLoadingOverride?: boolean
 }
 
 const chartConfig: ChartConfig = {
@@ -52,12 +60,29 @@ function sem(arr: number[]): number {
   return Math.sqrt(variance) / Math.sqrt(arr.length)
 }
 
-export function ResultsDashboard({ onBack, isEmbedded }: ResultsDashboardProps) {
-  const { participants, clearAllData, isLoaded } = useTestStore()
+export function ResultsDashboard({
+  onBack,
+  isEmbedded,
+  participantsOverride,
+  onDeleteParticipant,
+  onToggleMuted,
+  isLoadingOverride,
+}: ResultsDashboardProps) {
+  const store = useTestStore()
+  const useOverride = participantsOverride !== undefined
+  const participants = useOverride ? participantsOverride : store.participants
+  const clearAllData = store.clearAllData
+  const isLoaded = useOverride ? !isLoadingOverride : store.isLoaded
 
   const completedParticipants = useMemo(
     () => participants.filter((p) => p.completed),
     [participants]
+  )
+
+  // Muted participants are visible in the list but excluded from aggregates/charts.
+  const aggregatedParticipants = useMemo(
+    () => completedParticipants.filter((p) => !p.muted),
+    [completedParticipants]
   )
 
   // Collect raw values per noise type for computing means + SEM
@@ -68,7 +93,7 @@ export function ResultsDashboard({ onBack, isEmbedded }: ResultsDashboardProps) 
       cafe: { correct: [], falseAlarms: [], timeMs: [] },
       music: { correct: [], falseAlarms: [], timeMs: [] },
     }
-    completedParticipants.forEach((p) => {
+    aggregatedParticipants.forEach((p) => {
       p.results.forEach((r) => {
         if (!data[r.noiseType]) return
         data[r.noiseType].correct.push(r.correctCount)
@@ -77,7 +102,7 @@ export function ResultsDashboard({ onBack, isEmbedded }: ResultsDashboardProps) 
       })
     })
     return data
-  }, [completedParticipants])
+  }, [aggregatedParticipants])
 
   // Bar chart data: words recalled
   const wordsChartData = useMemo(() => {
@@ -118,18 +143,17 @@ export function ResultsDashboard({ onBack, isEmbedded }: ResultsDashboardProps) 
       })
   }, [raw])
 
-  // Stats summary
+  // Stats summary (muted participants excluded)
   const stats = useMemo(() => {
-    const totalParticipants = completedParticipants.length
-    const totalResponses = completedParticipants.reduce((sum, p) => sum + p.results.length, 0)
-    const allCorrect = Object.values(raw).flatMap((d) => d.correct)
+    const totalParticipants = aggregatedParticipants.length
+    const totalResponses = aggregatedParticipants.reduce((sum, p) => sum + p.results.length, 0)
     const allFalseAlarms = Object.values(raw).flatMap((d) => d.falseAlarms)
     const allTimeMs = Object.values(raw).flatMap((d) => d.timeMs)
 
     const avgAccuracy =
       totalResponses > 0
         ? (
-            (completedParticipants.reduce(
+            (aggregatedParticipants.reduce(
               (sum, p) => sum + p.results.reduce((s, r) => s + r.correctCount / r.totalWords, 0),
               0
             ) /
@@ -141,7 +165,7 @@ export function ResultsDashboard({ onBack, isEmbedded }: ResultsDashboardProps) 
     const avgFalseAlarms = allFalseAlarms.length > 0 ? mean(allFalseAlarms).toFixed(1) : "0"
 
     return { totalParticipants, totalResponses, avgAccuracy, avgTime, avgFalseAlarms }
-  }, [completedParticipants, raw])
+  }, [aggregatedParticipants, raw])
 
   // CSV export
   const downloadCsv = useCallback(() => {
@@ -157,6 +181,7 @@ export function ResultsDashboard({ onBack, isEmbedded }: ResultsDashboardProps) 
       "time_ms",
       "remembered_words",
       "target_words",
+      "muted",
     ]
     const rows = completedParticipants.flatMap((p) =>
       p.results.map((r, i) => [
@@ -171,6 +196,7 @@ export function ResultsDashboard({ onBack, isEmbedded }: ResultsDashboardProps) 
         r.timeTakenMs,
         `"${r.rememberedWords.join(", ")}"`,
         `"${r.targetWords.join(", ")}"`,
+        p.muted ? "1" : "0",
       ])
     )
     const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n")
@@ -228,15 +254,17 @@ export function ResultsDashboard({ onBack, isEmbedded }: ResultsDashboardProps) 
                   <Download className="w-4 h-4 mr-2" />
                   Export CSV
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={clearAllData}
-                  className="rounded-full text-destructive hover:text-destructive"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Clear Data
-                </Button>
+                {!useOverride && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={clearAllData}
+                    className="rounded-full text-destructive hover:text-destructive"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Clear Data
+                  </Button>
+                )}
               </div>
             )}
           </div>
@@ -366,15 +394,17 @@ export function ResultsDashboard({ onBack, isEmbedded }: ResultsDashboardProps) 
                   <Download className="w-4 h-4 mr-2" />
                   Export CSV
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={clearAllData}
-                  className="rounded-full text-destructive hover:text-destructive"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Clear Data
-                </Button>
+                {!useOverride && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={clearAllData}
+                    className="rounded-full text-destructive hover:text-destructive"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Clear Data
+                  </Button>
+                )}
               </motion.div>
             )}
 
@@ -528,6 +558,8 @@ export function ResultsDashboard({ onBack, isEmbedded }: ResultsDashboardProps) 
                         key={participant.id}
                         participant={participant}
                         index={pIdx}
+                        onDelete={onDeleteParticipant}
+                        onToggleMuted={onToggleMuted}
                       />
                     ))}
                   </div>
@@ -544,9 +576,13 @@ export function ResultsDashboard({ onBack, isEmbedded }: ResultsDashboardProps) 
 function ParticipantCard({
   participant,
   index,
+  onDelete,
+  onToggleMuted,
 }: {
   participant: ParticipantData
   index: number
+  onDelete?: (id: string) => void
+  onToggleMuted?: (id: string, muted: boolean) => void
 }) {
   const totalCorrect = participant.results.reduce((sum, r) => sum + r.correctCount, 0)
   const totalWords = participant.results.reduce((sum, r) => sum + r.totalWords, 0)
@@ -566,7 +602,11 @@ function ParticipantCard({
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: index * 0.05 }}
-      className="p-4 rounded-xl bg-secondary/30 hover:bg-secondary/50 transition-colors"
+      className={`p-4 rounded-xl transition-colors ${
+        participant.muted
+          ? "bg-muted/30 opacity-60 hover:opacity-80"
+          : "bg-secondary/30 hover:bg-secondary/50"
+      }`}
     >
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-3">
         <div className="flex items-center gap-3">
@@ -574,13 +614,18 @@ function ParticipantCard({
             {index + 1}
           </div>
           <div>
-            <p className="font-medium text-foreground">Participant {index + 1}</p>
+            <p className="font-medium text-foreground">
+              Participant {index + 1}
+              {participant.muted && (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">(muted — excluded from aggregates)</span>
+              )}
+            </p>
             <p className="text-xs text-muted-foreground">
               {new Date(participant.timestamp).toLocaleString()}
             </p>
           </div>
         </div>
-        <div className="flex gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <Badge variant="secondary" className="rounded-full">
             {accuracy}% recall
           </Badge>
@@ -590,6 +635,36 @@ function ParticipantCard({
           <Badge variant="outline" className="rounded-full">
             {avgTime}s avg
           </Badge>
+          {onToggleMuted && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="rounded-full h-8 px-2"
+              title={participant.muted ? "Unmute (include in aggregates)" : "Mute (exclude from aggregates)"}
+              onClick={() => onToggleMuted(participant.id, !participant.muted)}
+            >
+              {participant.muted ? (
+                <Volume2 className="w-4 h-4" />
+              ) : (
+                <VolumeX className="w-4 h-4" />
+              )}
+            </Button>
+          )}
+          {onDelete && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="rounded-full h-8 px-2 text-destructive hover:text-destructive"
+              title="Delete this participant's data permanently"
+              onClick={() => {
+                if (confirm("Permanently delete this participant's data? This cannot be undone.")) {
+                  onDelete(participant.id)
+                }
+              }}
+            >
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          )}
         </div>
       </div>
 

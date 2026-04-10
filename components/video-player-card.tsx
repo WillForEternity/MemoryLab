@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Play, Volume2, Eye } from "lucide-react"
 import type { VideoTest, NoiseType } from "@/lib/test-data"
-import { NOISE_LABELS, NOISE_AUDIO_URLS, MUSIC_YOUTUBE_ID } from "@/lib/test-data"
+import { NOISE_LABELS, NOISE_AUDIO_URLS } from "@/lib/test-data"
 
 interface VideoPlayerCardProps {
   video: VideoTest
@@ -14,77 +14,19 @@ interface VideoPlayerCardProps {
   totalVideos: number
 }
 
-// Extend Window for YouTube IFrame API
-declare global {
-  interface Window {
-    YT?: { Player: new (el: HTMLElement, opts: Record<string, unknown>) => YTPlayer }
-    onYouTubeIframeAPIReady?: () => void
-  }
-}
-interface YTPlayer { destroy(): void; setVolume(v: number): void }
-
-// Loads the YouTube IFrame API script (once).
-let ytApiLoaded = false
-let ytApiReady = false
-const ytReadyCallbacks: (() => void)[] = []
-
-function ensureYTApi(cb: () => void) {
-  if (ytApiReady) { cb(); return }
-  ytReadyCallbacks.push(cb)
-  if (ytApiLoaded) return
-  ytApiLoaded = true
-  const tag = document.createElement("script")
-  tag.src = "https://www.youtube.com/iframe_api"
-  document.head.appendChild(tag)
-  window.onYouTubeIframeAPIReady = () => {
-    ytApiReady = true
-    ytReadyCallbacks.forEach((fn) => fn())
-    ytReadyCallbacks.length = 0
-  }
-}
-
 // Starts the appropriate ambient sound for a noise type.
-// - Cafe: streamed via HTMLAudioElement with Web Audio API gain boost.
+// - Cafe & Music: streamed via HTMLAudioElement from a URL.
 // - White noise: generated via Web Audio API.
-// - Music: played via YouTube IFrame API (Kids – MGMT).
 // Returns a stop function. Must be called inside a user-gesture handler.
 function startAmbientSound(noiseType: NoiseType, preloaded?: HTMLAudioElement | null): (() => void) | null {
   if (noiseType === "silence") return null
-
-  // Music condition: use YouTube IFrame API
-  if (noiseType === "music") {
-    // Container must have real dimensions and be in the viewport for autoplay to work.
-    // We hide it visually with opacity:0 and pointer-events:none instead of offscreen positioning.
-    const container = document.createElement("div")
-    container.style.cssText = "position:fixed;bottom:0;left:0;width:320px;height:180px;opacity:0;pointer-events:none;z-index:-1"
-    document.body.appendChild(container)
-    let player: YTPlayer | null = null
-    let destroyed = false
-    ensureYTApi(() => {
-      if (!window.YT || destroyed) return
-      player = new window.YT.Player(container, {
-        width: 320,
-        height: 180,
-        videoId: MUSIC_YOUTUBE_ID,
-        playerVars: { autoplay: 1, controls: 0, start: 120, playsinline: 1 },
-        events: {
-          onReady: (e: { target: YTPlayer }) => { e.target.setVolume(70) },
-        },
-      } as Record<string, unknown>)
-    })
-    return () => {
-      destroyed = true
-      player?.destroy()
-      container.remove()
-    }
-  }
 
   const url = NOISE_AUDIO_URLS[noiseType]
 
   if (url) {
     const audio = preloaded ?? new Audio(url)
     audio.loop = true
-    audio.volume = 1.0
+    audio.volume = noiseType === "music" ? 0.7 : 1.0
     void audio.play()
     return () => { audio.pause(); audio.src = "" }
   }
@@ -118,9 +60,6 @@ export function VideoPlayerCard({ video, onComplete, videoIndex, totalVideos }: 
 
   // Preload audio on mount so playback is instant on click
   useEffect(() => {
-    if (video.noiseType === "music") {
-      ensureYTApi(() => {})
-    }
     const url = NOISE_AUDIO_URLS[video.noiseType]
     if (url) {
       const audio = new Audio(url)

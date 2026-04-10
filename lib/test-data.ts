@@ -34,6 +34,7 @@ export interface ParticipantData {
   timestamp: Date
   results: TestResult[]
   completed: boolean
+  muted?: boolean
 }
 
 export const NOISE_LABELS: Record<NoiseType, string> = {
@@ -52,16 +53,13 @@ export const NOISE_COLORS: Record<NoiseType, string> = {
 
 // Real ambient recordings from archive.org (CORS open, public domain / CC).
 // White noise uses Web Audio API (instant start, no file needed).
-// Music uses YouTube IFrame API (see video-player-card.tsx).
+// Music uses a self-hosted MP3 (chorus of Kids – MGMT) for reliable playback.
 export const NOISE_AUDIO_URLS: Record<NoiseType, string> = {
   silence: "",
   "white-noise": "",
   cafe: "https://archive.org/download/cafe-ambience-sound-effect/Cafe%20Ambience%20Sound%20Effect.mp3",
-  music: "",
+  music: "/mgmt-kids-chorus.mp3",
 }
-
-// YouTube video ID for the music condition (Kids – MGMT)
-export const MUSIC_YOUTUBE_ID = "fe4EK4HSPkI"
 
 // 10-word lists drawn from Roediger & McDermott (1995) DRM paradigm.
 // Pool of 16 lists — 8 are randomly selected and assigned to tests each session.

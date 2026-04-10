@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getSessionEmail } from "@/lib/admin-sessions.server"
 
 const SHEETS_URL =
-  "https://script.google.com/macros/s/AKfycbwBUYNJgIXe-TCejK-sFZ4Ua6Sj-mvUr9I6Fpto3TWOK9f_TmBWam_Vaq07IFtNE14/exec"
+  "https://script.google.com/macros/s/AKfycby47bSoEoMcb9dMe7D9til5QZq8cqpK-gle0yLuWfYyi43Bcnu79MKYbS-WfR66Gwxm/exec"
 
 function getAdminKey(): string {
   return process.env.SHEETS_ADMIN_KEY ?? ""

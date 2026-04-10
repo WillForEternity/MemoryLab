@@ -27,6 +27,7 @@ function startAmbientSound(noiseType: NoiseType, preloaded?: HTMLAudioElement | 
     const audio = preloaded ?? new Audio(url)
     audio.loop = true
     audio.volume = noiseType === "music" ? 0.7 : 1.0
+    if (noiseType === "music") audio.currentTime = 60
     void audio.play()
     return () => { audio.pause(); audio.src = "" }
   }

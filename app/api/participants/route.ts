@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getSessionEmail } from "@/lib/admin-sessions.server"
 
 const SHEETS_URL =
-  "https://script.google.com/macros/s/AKfycbxBW4xqLHdIvni7RnGlyw7ICaxWJVtT8bGYhkBW5KwGOkRWvW-0uKef0iKApqLfaOji/exec"
+  "https://script.google.com/macros/s/AKfycbzpmekFyeeNorocxNNOU8ylvbnWGNDG-yD0Y7lpiok-S8WaPhl398LSBS0bjJtwJu7S/exec"
 
 const FETCH_TIMEOUT_MS = 55_000
 

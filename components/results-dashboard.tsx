@@ -97,7 +97,7 @@ export function ResultsDashboard({
       p.results.forEach((r) => {
         if (!data[r.noiseType]) return
         data[r.noiseType].correct.push(r.correctCount)
-        data[r.noiseType].falseAlarms.push(r.rememberedWords.length - r.correctCount)
+        data[r.noiseType].falseAlarms.push(Math.max(0, r.rememberedWords.length - r.correctCount))
         data[r.noiseType].timeMs.push(r.timeTakenMs)
       })
     })
@@ -150,17 +150,17 @@ export function ResultsDashboard({
     const allFalseAlarms = Object.values(raw).flatMap((d) => d.falseAlarms)
     const allTimeMs = Object.values(raw).flatMap((d) => d.timeMs)
 
-    const avgAccuracy =
-      totalResponses > 0
-        ? (
-            (aggregatedParticipants.reduce(
-              (sum, p) => sum + p.results.reduce((s, r) => s + r.correctCount / r.totalWords, 0),
-              0
-            ) /
-              totalResponses) *
-            100
-          ).toFixed(1)
-        : "0"
+    let recallSum = 0
+    let recallCount = 0
+    aggregatedParticipants.forEach((p) => {
+      p.results.forEach((r) => {
+        if (r.totalWords > 0) {
+          recallSum += r.correctCount / r.totalWords
+          recallCount++
+        }
+      })
+    })
+    const avgAccuracy = recallCount > 0 ? ((recallSum / recallCount) * 100).toFixed(1) : "0"
     const avgTime = allTimeMs.length > 0 ? (mean(allTimeMs) / 1000).toFixed(1) : "0"
     const avgFalseAlarms = allFalseAlarms.length > 0 ? mean(allFalseAlarms).toFixed(1) : "0"
 
@@ -192,7 +192,7 @@ export function ResultsDashboard({
         r.noiseType,
         r.correctCount,
         r.totalWords,
-        r.rememberedWords.length - r.correctCount,
+        Math.max(0, r.rememberedWords.length - r.correctCount),
         r.timeTakenMs,
         `"${r.rememberedWords.join(", ")}"`,
         `"${r.targetWords.join(", ")}"`,
@@ -592,15 +592,17 @@ function ParticipantCard({
   const totalCorrect = participant.results.reduce((sum, r) => sum + r.correctCount, 0)
   const totalWords = participant.results.reduce((sum, r) => sum + r.totalWords, 0)
   const totalFalseAlarms = participant.results.reduce(
-    (sum, r) => sum + (r.rememberedWords.length - r.correctCount),
+    (sum, r) => sum + Math.max(0, r.rememberedWords.length - r.correctCount),
     0
   )
-  const accuracy = ((totalCorrect / totalWords) * 100).toFixed(1)
-  const avgTime = (
-    participant.results.reduce((sum, r) => sum + r.timeTakenMs, 0) /
-    participant.results.length /
-    1000
-  ).toFixed(1)
+  const accuracy = totalWords > 0 ? ((totalCorrect / totalWords) * 100).toFixed(1) : "0.0"
+  const avgTime = participant.results.length > 0
+    ? (
+        participant.results.reduce((sum, r) => sum + r.timeTakenMs, 0) /
+        participant.results.length /
+        1000
+      ).toFixed(1)
+    : "0.0"
 
   return (
     <motion.div

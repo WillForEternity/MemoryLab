@@ -170,8 +170,10 @@ function listParticipants_() {
 
   for (var i = 0; i < values.length; i++) {
     var row = values[i]
-    var id = row[0]
+    var id = String(row[0]).trim()
     if (!id) continue
+    // Skip stray header rows that appear mid-sheet
+    if (id === "Participant ID") continue
 
     if (!byId[id]) {
       var ts = row[1]
@@ -185,9 +187,17 @@ function listParticipants_() {
       ids.push(id)
     }
 
+    var testId = +row[2] || 0
+    // Deduplicate: skip if this participant already has a result for this testId
+    var dominated = false
+    for (var k = 0; k < byId[id].results.length; k++) {
+      if (byId[id].results[k].testId === testId) { dominated = true; break }
+    }
+    if (dominated) continue
+
     byId[id].results.push({
-      testId: +row[2] || 0,
-      presentationOrder: +row[2] || 0,
+      testId: testId,
+      presentationOrder: testId,
       noiseType: row[3] || "",
       correctCount: +row[4] || 0,
       totalWords: +row[5] || 0,

@@ -24,37 +24,31 @@
  *   4. Deploy → New deployment → Web app → Execute as: Me, Access: Anyone.
  *   5. Copy the /exec URL into SHEETS_URL in use-test-store.ts and
  *      app/api/participants/route.ts (they should match).
+ *
+ * Sheet format (10 columns):
+ *   Participant ID | Timestamp | Test ID | Noise Type | Correct Count |
+ *   Total Words | Score % | Time Taken (s) | Remembered Words | Target Words
  */
 
 var SHEET_NAME = "Results"
-var HEADERS = [
-  "participant_id",
-  "timestamp",
-  "trial_number",
-  "presentation_order",
-  "noise_type",
-  "correct_count",
-  "total_words",
-  "false_alarm_count",
-  "time_ms",
-  "remembered_words",
-  "target_words",
-  "muted",
-]
 
 function getSheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet()
   var sheet = ss.getSheetByName(SHEET_NAME)
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_NAME)
-    sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS])
-    sheet.setFrozenRows(1)
-  } else if (sheet.getLastRow() === 0) {
-    sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS])
+    var headers = [
+      "Participant ID", "Timestamp", "Test ID", "Noise Type",
+      "Correct Count", "Total Words", "Score %",
+      "Time Taken (s)", "Remembered Words", "Target Words"
+    ]
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers])
     sheet.setFrozenRows(1)
   }
   return sheet
 }
+
+var NUM_COLS = 10
 
 function adminKey_() {
   return PropertiesService.getScriptProperties().getProperty("SHEETS_ADMIN_KEY") || ""
@@ -92,7 +86,6 @@ function doPost(e) {
     return json_({ ok: true })
   }
 
-  // Admin actions require the key
   if (body.key !== adminKey_()) return json_({ error: "unauthorized" })
 
   if (action === "delete") {
@@ -115,23 +108,25 @@ function appendSubmission_(payload) {
   var rows = payload.results.map(function (r, i) {
     var remembered = Array.isArray(r.rememberedWords) ? r.rememberedWords : []
     var targets = Array.isArray(r.targetWords) ? r.targetWords : []
+    var correct = r.correctCount == null ? 0 : r.correctCount
+    var total = r.totalWords == null ? 0 : r.totalWords
+    var pct = total > 0 ? Math.round((correct / total) * 100) + "%" : "0%"
+    var timeSec = r.timeTakenMs == null ? 0 : +(r.timeTakenMs / 1000).toFixed(1)
     return [
       payload.id,
       ts,
-      i + 1,
-      r.presentationOrder == null ? "" : r.presentationOrder,
+      r.presentationOrder == null ? i + 1 : r.presentationOrder + 1,
       r.noiseType || "",
-      r.correctCount == null ? 0 : r.correctCount,
-      r.totalWords == null ? 0 : r.totalWords,
-      remembered.length - (r.correctCount == null ? 0 : r.correctCount),
-      r.timeTakenMs == null ? 0 : r.timeTakenMs,
+      correct,
+      total,
+      pct,
+      timeSec,
       remembered.join(", "),
       targets.join(", "),
-      0, // muted flag, default 0
     ]
   })
   if (rows.length > 0) {
-    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, HEADERS.length).setValues(rows)
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, NUM_COLS).setValues(rows)
   }
 }
 
@@ -140,11 +135,10 @@ function deleteParticipant_(id) {
   var sheet = getSheet_()
   var last = sheet.getLastRow()
   if (last < 2) return 0
-  var values = sheet.getRange(2, 1, last - 1, HEADERS.length).getValues()
+  var ids = sheet.getRange(2, 1, last - 1, 1).getValues()
   var deleted = 0
-  // Delete from the bottom up so row indices stay valid.
-  for (var i = values.length - 1; i >= 0; i--) {
-    if (values[i][0] === id) {
+  for (var i = ids.length - 1; i >= 0; i--) {
+    if (ids[i][0] === id) {
       sheet.deleteRow(i + 2)
       deleted++
     }
@@ -153,70 +147,53 @@ function deleteParticipant_(id) {
 }
 
 function setMuted_(id, muted) {
-  if (!id) return 0
-  var sheet = getSheet_()
-  var last = sheet.getLastRow()
-  if (last < 2) return 0
-  var mutedCol = HEADERS.indexOf("muted") + 1
-  var ids = sheet.getRange(2, 1, last - 1, 1).getValues()
-  var updated = 0
-  for (var i = 0; i < ids.length; i++) {
-    if (ids[i][0] === id) {
-      sheet.getRange(i + 2, mutedCol).setValue(muted ? 1 : 0)
-      updated++
-    }
-  }
-  return updated
+  // Muting not supported in the 10-column format — no-op that returns 0.
+  return 0
 }
+
+// Column indices for the 10-column sheet:
+//  0: Participant ID    5: Total Words
+//  1: Timestamp         6: Score %
+//  2: Test ID           7: Time Taken (s)
+//  3: Noise Type        8: Remembered Words
+//  4: Correct Count     9: Target Words
 
 function listParticipants_() {
   var sheet = getSheet_()
   var last = sheet.getLastRow()
   if (last < 2) return []
 
-  // Single bulk read — this is the expensive I/O call; do it once.
-  var values = sheet.getRange(2, 1, last - 1, HEADERS.length).getValues()
-
-  // Column indices (avoid repeated lookups)
-  var COL_ID = 0, COL_TS = 1, COL_TRIAL = 2, COL_ORDER = 3, COL_NOISE = 4
-  var COL_CORRECT = 5, COL_TOTAL = 6, COL_TIME = 8
-  var COL_REMEMBERED = 9, COL_TARGETS = 10, COL_MUTED = 11
+  var values = sheet.getRange(2, 1, last - 1, NUM_COLS).getValues()
 
   var byId = {}
-  var ids = [] // preserve insertion order for output
+  var ids = []
 
   for (var i = 0; i < values.length; i++) {
     var row = values[i]
-    var id = row[COL_ID]
+    var id = row[0]
     if (!id) continue
 
-    var mutedVal = row[COL_MUTED]
-    var isMuted = mutedVal === 1 || mutedVal === "1" || mutedVal === true
-
     if (!byId[id]) {
-      var ts = row[COL_TS]
+      var ts = row[1]
       byId[id] = {
         id: id,
         timestamp: ts ? (typeof ts === "object" && ts.getTime ? ts.toISOString() : String(ts)) : new Date().toISOString(),
         completed: true,
-        muted: isMuted,
+        muted: false,
         results: [],
       }
       ids.push(id)
-    } else if (isMuted) {
-      byId[id].muted = true
     }
 
-    // Keep remembered/target as raw strings — parse client-side to save GAS CPU
     byId[id].results.push({
-      testId: +row[COL_TRIAL] || 0,
-      presentationOrder: +row[COL_ORDER] || 0,
-      noiseType: row[COL_NOISE] || "",
-      correctCount: +row[COL_CORRECT] || 0,
-      totalWords: +row[COL_TOTAL] || 0,
-      timeTakenMs: +row[COL_TIME] || 0,
-      rememberedWords: row[COL_REMEMBERED] || "",
-      targetWords: row[COL_TARGETS] || "",
+      testId: +row[2] || 0,
+      presentationOrder: +row[2] || 0,
+      noiseType: row[3] || "",
+      correctCount: +row[4] || 0,
+      totalWords: +row[5] || 0,
+      timeTakenMs: Math.round((parseFloat(row[7]) || 0) * 1000),
+      rememberedWords: row[8] || "",
+      targetWords: row[9] || "",
     })
   }
 

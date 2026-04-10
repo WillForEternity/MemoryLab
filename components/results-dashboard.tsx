@@ -272,7 +272,12 @@ export function ResultsDashboard({
       )}
 
       <main className={isEmbedded ? "" : "max-w-7xl mx-auto px-4 py-8"}>
-        {completedParticipants.length === 0 ? (
+        {!isLoaded ? (
+          <div className="text-center py-20">
+            <div className="w-12 h-12 mx-auto mb-4 border-4 border-muted border-t-primary rounded-full animate-spin" />
+            <p className="text-muted-foreground">Loading participant data&hellip;</p>
+          </div>
+        ) : completedParticipants.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

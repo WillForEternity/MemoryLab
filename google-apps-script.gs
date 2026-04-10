@@ -173,52 +173,61 @@ function listParticipants_() {
   var sheet = getSheet_()
   var last = sheet.getLastRow()
   if (last < 2) return []
+
+  // Single bulk read — this is the expensive I/O call; do it once.
   var values = sheet.getRange(2, 1, last - 1, HEADERS.length).getValues()
 
+  // Column indices (avoid repeated lookups)
+  var COL_ID = 0, COL_TS = 1, COL_TRIAL = 2, COL_ORDER = 3, COL_NOISE = 4
+  var COL_CORRECT = 5, COL_TOTAL = 6, COL_TIME = 8
+  var COL_REMEMBERED = 9, COL_TARGETS = 10, COL_MUTED = 11
+
   var byId = {}
+  var ids = [] // preserve insertion order for output
+
   for (var i = 0; i < values.length; i++) {
     var row = values[i]
-    var id = row[0]
+    var id = row[COL_ID]
     if (!id) continue
+
+    var mutedVal = row[COL_MUTED]
+    var isMuted = mutedVal === 1 || mutedVal === "1" || mutedVal === true
+
     if (!byId[id]) {
+      var ts = row[COL_TS]
       byId[id] = {
         id: id,
-        timestamp: row[1] ? new Date(row[1]).toISOString() : new Date().toISOString(),
+        timestamp: ts ? (typeof ts === "object" && ts.getTime ? ts.toISOString() : String(ts)) : new Date().toISOString(),
         completed: true,
-        muted: row[11] === 1 || row[11] === "1" || row[11] === true,
+        muted: isMuted,
         results: [],
       }
+      ids.push(id)
+    } else if (isMuted) {
+      byId[id].muted = true
     }
-    // If any row is muted for this participant, treat the participant as muted.
-    if (row[11] === 1 || row[11] === "1" || row[11] === true) byId[id].muted = true
 
-    var remembered = typeof row[9] === "string" && row[9].length > 0
-      ? row[9].split(",").map(function (s) { return s.trim() }).filter(Boolean)
-      : []
-    var targets = typeof row[10] === "string" && row[10].length > 0
-      ? row[10].split(",").map(function (s) { return s.trim() }).filter(Boolean)
-      : []
-
+    // Keep remembered/target as raw strings — parse client-side to save GAS CPU
     byId[id].results.push({
-      testId: Number(row[2]) || 0,
-      presentationOrder: Number(row[3]) || 0,
-      noiseType: row[4] || "",
-      correctCount: Number(row[5]) || 0,
-      totalWords: Number(row[6]) || 0,
-      timeTakenMs: Number(row[8]) || 0,
-      rememberedWords: remembered,
-      targetWords: targets,
+      testId: +row[COL_TRIAL] || 0,
+      presentationOrder: +row[COL_ORDER] || 0,
+      noiseType: row[COL_NOISE] || "",
+      correctCount: +row[COL_CORRECT] || 0,
+      totalWords: +row[COL_TOTAL] || 0,
+      timeTakenMs: +row[COL_TIME] || 0,
+      rememberedWords: row[COL_REMEMBERED] || "",
+      targetWords: row[COL_TARGETS] || "",
     })
   }
 
-  // Sort each participant's results by trial number, then return newest participants first.
-  var out = []
-  for (var id2 in byId) {
-    byId[id2].results.sort(function (a, b) { return a.testId - b.testId })
-    out.push(byId[id2])
+  var out = new Array(ids.length)
+  for (var j = 0; j < ids.length; j++) {
+    var p = byId[ids[j]]
+    p.results.sort(function (a, b) { return a.testId - b.testId })
+    out[j] = p
   }
   out.sort(function (a, b) {
-    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    return (b.timestamp > a.timestamp ? 1 : b.timestamp < a.timestamp ? -1 : 0)
   })
   return out
 }

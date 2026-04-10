@@ -1,12 +1,10 @@
-// Admin-only proxy to the Google Sheet (via Apps Script).
-// The sheet is the single source of truth for all participant data.
-// The admin key stays server-side; it's never exposed to the browser.
-
 import { NextRequest, NextResponse } from "next/server"
 import { getSessionEmail } from "@/lib/admin-sessions.server"
 
 const SHEETS_URL =
-  "https://script.google.com/macros/s/AKfycby47bSoEoMcb9dMe7D9til5QZq8cqpK-gle0yLuWfYyi43Bcnu79MKYbS-WfR66Gwxm/exec"
+  "https://script.google.com/macros/s/AKfycby8rwJbJhqC3dOb5Z3Kzp11H5pjv-nCfcNq5DnjV8t8kdVB_F8ZIS68ibymUxTSPcyb/exec"
+
+const FETCH_TIMEOUT_MS = 55_000
 
 function getAdminKey(): string {
   return process.env.SHEETS_ADMIN_KEY ?? ""
@@ -18,6 +16,36 @@ function requireAdmin(req: NextRequest): boolean {
   return !!getSessionEmail(token)
 }
 
+function splitWords(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw
+  if (typeof raw === "string" && raw.length > 0)
+    return raw.split(",").map((s: string) => s.trim()).filter(Boolean)
+  return []
+}
+
+interface RawResult {
+  rememberedWords: unknown
+  targetWords: unknown
+  [key: string]: unknown
+}
+
+interface RawParticipant {
+  results: RawResult[]
+  [key: string]: unknown
+}
+
+function normalizeParticipants(data: { participants?: RawParticipant[] }) {
+  const list = data.participants ?? []
+  return list.map((p) => ({
+    ...p,
+    results: p.results.map((r) => ({
+      ...r,
+      rememberedWords: splitWords(r.rememberedWords),
+      targetWords: splitWords(r.targetWords),
+    })),
+  }))
+}
+
 // GET /api/participants — returns { participants: ParticipantData[] }
 export async function GET(req: NextRequest) {
   if (!requireAdmin(req)) {
@@ -25,21 +53,50 @@ export async function GET(req: NextRequest) {
   }
 
   const url = `${SHEETS_URL}?action=list&key=${encodeURIComponent(getAdminKey())}`
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+
   try {
-    const res = await fetch(url, { cache: "no-store", redirect: "follow" })
+    const res = await fetch(url, {
+      cache: "no-store",
+      redirect: "follow",
+      signal: controller.signal,
+    })
+    clearTimeout(timer)
+
     if (!res.ok) {
+      const text = await res.text().catch(() => "")
       return NextResponse.json(
-        { error: `Sheet fetch failed: ${res.status}` },
+        { error: `Sheet returned ${res.status}: ${text.slice(0, 200)}` },
         { status: 502 }
       )
     }
+
+    const contentType = res.headers.get("content-type") ?? ""
+    if (!contentType.includes("json")) {
+      const text = await res.text().catch(() => "")
+      return NextResponse.json(
+        { error: `Sheet returned non-JSON (${contentType}): ${text.slice(0, 300)}` },
+        { status: 502 }
+      )
+    }
+
     const data = await res.json()
-    return NextResponse.json(data)
+
+    if (data.error) {
+      return NextResponse.json(
+        { error: `Sheet error: ${data.error}` },
+        { status: 502 }
+      )
+    }
+
+    return NextResponse.json({ participants: normalizeParticipants(data) })
   } catch (e) {
-    return NextResponse.json(
-      { error: `Sheet fetch error: ${(e as Error).message}` },
-      { status: 502 }
-    )
+    clearTimeout(timer)
+    const msg = (e as Error).name === "AbortError"
+      ? "Google Apps Script timed out — the sheet may have too many rows. Try again."
+      : `Sheet fetch error: ${(e as Error).message}`
+    return NextResponse.json({ error: msg }, { status: 502 })
   }
 }
 

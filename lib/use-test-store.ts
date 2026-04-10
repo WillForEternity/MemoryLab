@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import type { ParticipantData, TestResult } from "./test-data"
 
 const SHEETS_URL =
-  "https://script.google.com/macros/s/AKfycby47bSoEoMcb9dMe7D9til5QZq8cqpK-gle0yLuWfYyi43Bcnu79MKYbS-WfR66Gwxm/exec"
+  "https://script.google.com/macros/s/AKfycby8rwJbJhqC3dOb5Z3Kzp11H5pjv-nCfcNq5DnjV8t8kdVB_F8ZIS68ibymUxTSPcyb/exec"
 
 async function submitToSheets(participant: ParticipantData) {
   const payload = {

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
 import { ShieldCheck, ArrowRight } from "lucide-react"
 
 interface EligibilityGateProps {
@@ -11,11 +12,39 @@ interface EligibilityGateProps {
 }
 
 export function EligibilityGate({ onPass }: EligibilityGateProps) {
-  const [adult, setAdult] = useState(false)
+  const [ageInput, setAgeInput] = useState("")
   const [citizen, setCitizen] = useState(false)
-  const [denied, setDenied] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const canContinue = useMemo(() => adult && citizen, [adult, citizen])
+  const parsedAge = useMemo(() => {
+    const trimmed = ageInput.trim()
+    if (!trimmed) return null
+    const n = Number(trimmed)
+    return Number.isFinite(n) && Number.isInteger(n) && n >= 0 ? n : null
+  }, [ageInput])
+
+  const ageValid = parsedAge !== null && parsedAge >= 18 && parsedAge <= 120
+  const canContinue = ageValid && citizen
+
+  const handleSubmit = () => {
+    if (parsedAge === null) {
+      setError("Please enter your age.")
+      return
+    }
+    if (parsedAge < 18) {
+      setError("You must be at least 18 years old to participate in this study.")
+      return
+    }
+    if (parsedAge > 120) {
+      setError("Please enter a valid age.")
+      return
+    }
+    if (!citizen) {
+      setError("You must be a U.S. citizen to participate in this study.")
+      return
+    }
+    onPass()
+  }
 
   return (
     <motion.div
@@ -61,65 +90,81 @@ export function EligibilityGate({ onPass }: EligibilityGateProps) {
           Before entering Memory Lab, please confirm the following:
         </motion.p>
 
+        {/* Age input */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="space-y-2 mb-6"
+          className="mb-3"
         >
-          {[
-            {
-              id: "adult",
-              label: "I am over the age of 18.",
-              value: adult,
-              set: setAdult,
-            },
-            {
-              id: "citizen",
-              label: "I am a U.S. citizen.",
-              value: citizen,
-              set: setCitizen,
-            },
-          ].map((q) => (
-            <label
-              key={q.id}
-              htmlFor={q.id}
-              className="flex items-start gap-3 p-3 rounded-xl bg-secondary/40 hover:bg-secondary/60 transition-colors cursor-pointer"
-            >
-              <Checkbox
-                id={q.id}
-                checked={q.value}
-                onCheckedChange={(v) => q.set(v === true)}
-                className="mt-0.5"
-              />
-              <span className="text-sm sm:text-base text-foreground/90 leading-relaxed">
-                {q.label}
-              </span>
-            </label>
-          ))}
+          <label
+            htmlFor="age"
+            className="block text-sm sm:text-base font-medium text-foreground mb-1.5"
+          >
+            How old are you?
+          </label>
+          <Input
+            id="age"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={120}
+            placeholder="Enter your age"
+            value={ageInput}
+            onChange={(e) => {
+              setAgeInput(e.target.value)
+              setError(null)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleSubmit()
+            }}
+            className="rounded-xl"
+          />
         </motion.div>
 
-        {denied && (
+        {/* Citizenship */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25 }}
+          className="mb-5"
+        >
+          <label
+            htmlFor="citizen"
+            className="flex items-start gap-3 p-3 rounded-xl bg-secondary/40 hover:bg-secondary/60 transition-colors cursor-pointer"
+          >
+            <Checkbox
+              id="citizen"
+              checked={citizen}
+              onCheckedChange={(v) => {
+                setCitizen(v === true)
+                setError(null)
+              }}
+              className="mt-0.5"
+            />
+            <span className="text-sm sm:text-base text-foreground/90 leading-relaxed">
+              I am a U.S. citizen.
+            </span>
+          </label>
+        </motion.div>
+
+        {error && (
           <motion.div
             initial={{ opacity: 0, y: -5 }}
             animate={{ opacity: 1, y: 0 }}
             className="mb-4 p-3 rounded-xl bg-destructive/10 text-destructive text-xs sm:text-sm text-center"
           >
-            You must be at least 18 and a U.S. citizen to participate in this
-            study.
+            {error}
           </motion.div>
         )}
 
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.25 }}
+          transition={{ delay: 0.3 }}
         >
           <Button
-            onClick={() => {
-              if (canContinue) onPass()
-              else setDenied(true)
-            }}
+            onClick={handleSubmit}
             disabled={!canContinue}
             size="lg"
             className="w-full rounded-full text-base font-medium shadow-lg hover:shadow-xl transition-shadow disabled:opacity-50 disabled:cursor-not-allowed"

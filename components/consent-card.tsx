@@ -24,11 +24,13 @@ export function ConsentCard({ onAgree, onDecline }: ConsentCardProps) {
   const [device, setDevice] = useState(false)
   const [volume, setVolume] = useState(false)
   const [engaged, setEngaged] = useState(false)
+  const [citizen, setCitizen] = useState(false)
+  const [adult, setAdult] = useState(false)
   const [agreed, setAgreed] = useState(false)
 
   const canContinue = useMemo(
-    () => device && volume && engaged && agreed,
-    [device, volume, engaged, agreed]
+    () => device && volume && engaged && citizen && adult && agreed,
+    [device, volume, engaged, citizen, adult, agreed]
   )
 
   const numberedPoints = [
@@ -219,6 +221,18 @@ export function ConsentCard({ onAgree, onDecline }: ConsentCardProps) {
             label: "Will you stay engaged with the video's purpose?",
             value: engaged,
             set: setEngaged,
+          },
+          {
+            id: "citizen",
+            label: "Are you a U.S. citizen?",
+            value: citizen,
+            set: setCitizen,
+          },
+          {
+            id: "adult",
+            label: "Are you over the age of 18?",
+            value: adult,
+            set: setAdult,
           },
         ].map((q) => (
           <label

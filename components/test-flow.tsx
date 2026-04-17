@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react"
 import { AnimatePresence, motion, type Variants } from "framer-motion"
 import { ConsentCard } from "./consent-card"
+import { AudioCheckCard } from "./audio-check-card"
 import { TutorialCard } from "./tutorial-card"
 import { VideoPlayerCard } from "./video-player-card"
 import { QuestionCard } from "./question-card"
@@ -10,7 +11,13 @@ import { CompletionCard } from "./completion-card"
 import { buildSessionTests, type TestResult, type VideoTest } from "@/lib/test-data"
 import { useTestStore } from "@/lib/use-test-store"
 
-type FlowState = "consent" | "tutorial" | "video" | "question" | "complete"
+type FlowState =
+  | "consent"
+  | "audio-check"
+  | "tutorial"
+  | "video"
+  | "question"
+  | "complete"
 
 interface TestFlowProps {
   onViewResults: () => void
@@ -95,8 +102,15 @@ export function TestFlow({ onViewResults, onGoHome }: TestFlowProps) {
         >
           {flowState === "consent" && (
             <ConsentCard
-              onAgree={() => setFlowState("tutorial")}
+              onAgree={() => setFlowState("audio-check")}
               onDecline={onGoHome}
+            />
+          )}
+
+          {flowState === "audio-check" && (
+            <AudioCheckCard
+              onPass={() => setFlowState("tutorial")}
+              onBack={() => setFlowState("consent")}
             />
           )}
 

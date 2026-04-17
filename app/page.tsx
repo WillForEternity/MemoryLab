@@ -1,20 +1,51 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { TestFlow } from "@/components/test-flow"
 import { ResultsDashboard } from "@/components/results-dashboard"
 import { AdminLoginDialog } from "@/components/admin-login-dialog"
 import { AdminPanel } from "@/components/admin-panel"
+import { EligibilityGate } from "@/components/eligibility-gate"
 import { Button } from "@/components/ui/button"
 import { Brain, Sparkles, Volume2, Lock, Shield } from "lucide-react"
 import { useAdminAuth } from "@/lib/admin-auth"
 
 type View = "home" | "test" | "results" | "admin"
 
+const ELIGIBILITY_KEY = "memory-lab-eligibility-passed"
+
 export default function MemoryLabPage() {
   const [view, setView] = useState<View>("home")
+  const [eligibilityChecked, setEligibilityChecked] = useState(false)
+  const [eligible, setEligible] = useState(false)
   const { isAdmin } = useAdminAuth()
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const passed = sessionStorage.getItem(ELIGIBILITY_KEY) === "true"
+    setEligible(passed)
+    setEligibilityChecked(true)
+  }, [])
+
+  const handleEligibilityPass = () => {
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem(ELIGIBILITY_KEY, "true")
+    }
+    setEligible(true)
+  }
+
+  if (!eligibilityChecked) {
+    return <div className="min-h-screen bg-background" />
+  }
+
+  if (!eligible && !isAdmin) {
+    return (
+      <AnimatePresence mode="wait">
+        <EligibilityGate key="eligibility" onPass={handleEligibilityPass} />
+      </AnimatePresence>
+    )
+  }
 
   return (
     <AnimatePresence mode="wait">

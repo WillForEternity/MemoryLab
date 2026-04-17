@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react"
 import { AnimatePresence, motion, type Variants } from "framer-motion"
+import { ConsentCard } from "./consent-card"
 import { TutorialCard } from "./tutorial-card"
 import { VideoPlayerCard } from "./video-player-card"
 import { QuestionCard } from "./question-card"
@@ -9,7 +10,7 @@ import { CompletionCard } from "./completion-card"
 import { buildSessionTests, type TestResult, type VideoTest } from "@/lib/test-data"
 import { useTestStore } from "@/lib/use-test-store"
 
-type FlowState = "tutorial" | "video" | "question" | "complete"
+type FlowState = "consent" | "tutorial" | "video" | "question" | "complete"
 
 interface TestFlowProps {
   onViewResults: () => void
@@ -17,7 +18,7 @@ interface TestFlowProps {
 }
 
 export function TestFlow({ onViewResults, onGoHome }: TestFlowProps) {
-  const [flowState, setFlowState] = useState<FlowState>("tutorial")
+  const [flowState, setFlowState] = useState<FlowState>("consent")
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0)
   // Each session gets a fresh random set: 8 word lists drawn from a pool of 16,
   // randomly paired with noise conditions, with word order shuffled.
@@ -92,6 +93,13 @@ export function TestFlow({ onViewResults, onGoHome }: TestFlowProps) {
           exit="exit"
           className="bg-card text-card-foreground shadow-xl w-full p-5 sm:p-8 md:p-12 relative overflow-hidden rounded-3xl"
         >
+          {flowState === "consent" && (
+            <ConsentCard
+              onAgree={() => setFlowState("tutorial")}
+              onDecline={onGoHome}
+            />
+          )}
+
           {flowState === "tutorial" && (
             <TutorialCard onStart={handleStartExperiment} />
           )}

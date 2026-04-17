@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Play, Volume2, Eye } from "lucide-react"
-import type { VideoTest, NoiseType } from "@/lib/test-data"
+import type { VideoTest } from "@/lib/test-data"
 import { NOISE_LABELS, NOISE_AUDIO_URLS } from "@/lib/test-data"
 
 interface VideoPlayerCardProps {
@@ -14,41 +14,9 @@ interface VideoPlayerCardProps {
   totalVideos: number
 }
 
-// Starts the appropriate ambient sound for a noise type.
-// - Cafe & Music: streamed via HTMLAudioElement from a URL.
-// - White noise: generated via Web Audio API.
-// Returns a stop function. Must be called inside a user-gesture handler.
-function startAmbientSound(noiseType: NoiseType, preloaded?: HTMLAudioElement | null): (() => void) | null {
-  if (noiseType === "silence") return null
-
-  const url = NOISE_AUDIO_URLS[noiseType]
-
-  if (url) {
-    const audio = preloaded ?? new Audio(url)
-    audio.loop = true
-    audio.volume = noiseType === "music" ? 0.7 : 1.0
-    if (noiseType === "music") audio.currentTime = 60
-    void audio.play()
-    return () => { audio.pause(); audio.src = "" }
-  }
-
-  // White noise: generated via Web Audio API (flat spectrum, instant start)
-  const AudioContextClass =
-    window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-  if (!AudioContextClass) return null
-
-  const ctx = new AudioContextClass()
-  const n = Math.ceil(ctx.sampleRate * 3)
-  const buf = ctx.createBuffer(1, n, ctx.sampleRate)
-  const d = buf.getChannelData(0)
-  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1
-  const src = ctx.createBufferSource()
-  src.buffer = buf; src.loop = true
-  const gain = ctx.createGain(); gain.gain.value = 0.08
-  src.connect(gain); gain.connect(ctx.destination); src.start()
-
-  return () => { void ctx.close() }
-}
+// Per-noise-type playback volume. Music starts at 60s into the file.
+const VOLUME: Record<string, number> = { music: 0.7 }
+const START_AT: Record<string, number> = { music: 60 }
 
 export function VideoPlayerCard({ video, onComplete, videoIndex, totalVideos }: VideoPlayerCardProps) {
   const [isPlaying, setIsPlaying] = useState(false)
@@ -56,31 +24,29 @@ export function VideoPlayerCard({ video, onComplete, videoIndex, totalVideos }: 
   const [currentWordIndex, setCurrentWordIndex] = useState(-1)
   const [showingWords, setShowingWords] = useState(false)
   const [countdown, setCountdown] = useState<number | null>(null)
-  const stopAudioRef = useRef<(() => void) | null>(null)
-  const preloadedAudioRef = useRef<HTMLAudioElement | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  // Preload audio on mount so playback is instant on click
+  // Create the audio element on mount and let the browser preload the file.
+  // The MP3s are static assets served by Vercel's CDN (/public).
   useEffect(() => {
     const url = NOISE_AUDIO_URLS[video.noiseType]
-    if (url) {
-      const audio = new Audio(url)
-      audio.preload = "auto"
-      audio.load()
-      preloadedAudioRef.current = audio
-    }
+    if (!url) return
+    const audio = new Audio(url)
+    audio.loop = true
+    audio.preload = "auto"
+    audio.volume = VOLUME[video.noiseType] ?? 1.0
+    audioRef.current = audio
     return () => {
-      if (preloadedAudioRef.current) {
-        preloadedAudioRef.current.pause()
-        preloadedAudioRef.current.src = ""
-        preloadedAudioRef.current = null
-      }
+      audio.pause()
+      audio.src = ""
+      audioRef.current = null
     }
   }, [video.noiseType])
 
   // Countdown → word sequence timing
-  // Audio is started in handlePlay (user gesture) and tracked via stopAudioRef.
-  // This effect only manages the countdown and word intervals — it does NOT
-  // touch audio in its cleanup so React re-runs don't kill the sound.
+  // Audio is started in handlePlay (user gesture) and stopped after the last
+  // word. This effect only manages the countdown and word intervals — it does
+  // NOT touch audio in its cleanup so React re-runs don't kill the sound.
   const wordIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -103,10 +69,7 @@ export function VideoPlayerCard({ video, onComplete, videoIndex, totalVideos }: 
             if (prev >= video.words.length - 1) {
               if (wordIntervalRef.current) clearInterval(wordIntervalRef.current)
               setTimeout(() => {
-                if (stopAudioRef.current) {
-                  stopAudioRef.current()
-                  stopAudioRef.current = null
-                }
+                if (audioRef.current) audioRef.current.pause()
                 setIsPlaying(false)
                 setHasWatched(true)
                 setShowingWords(false)
@@ -130,8 +93,12 @@ export function VideoPlayerCard({ video, onComplete, videoIndex, totalVideos }: 
 
   const handlePlay = () => {
     if (hasWatched) return
-    // Start sound in user-gesture handler (browser autoplay policy)
-    stopAudioRef.current = startAmbientSound(video.noiseType, preloadedAudioRef.current)
+    // Start sound inside the click handler (browser autoplay policy).
+    const audio = audioRef.current
+    if (audio) {
+      audio.currentTime = START_AT[video.noiseType] ?? 0
+      void audio.play()
+    }
     setIsPlaying(true)
   }
 

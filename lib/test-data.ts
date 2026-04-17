@@ -51,13 +51,13 @@ export const NOISE_COLORS: Record<NoiseType, string> = {
   music: "var(--chart-5)",
 }
 
-// Real ambient recordings from archive.org (CORS open, public domain / CC).
-// White noise uses Web Audio API (instant start, no file needed).
-// Music uses a self-hosted MP3 (chorus of Kids – MGMT) for reliable playback.
+// Ambient audio files, shipped as static assets in /public and served by the
+// Vercel CDN. Silence has no file. Keep these paths stable — the player loads
+// them directly with `new Audio(url)`.
 export const NOISE_AUDIO_URLS: Record<NoiseType, string> = {
   silence: "",
-  "white-noise": "",
-  cafe: "https://archive.org/download/cafe-ambience-sound-effect/Cafe%20Ambience%20Sound%20Effect.mp3",
+  "white-noise": "/white-noise.mp3",
+  cafe: "/cafe-ambience.mp3",
   music: "/mgmt-kids-chorus.mp3",
 }
 

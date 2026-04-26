@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   Volume2,
   Phone,
+  Mail,
   Lock,
   Info,
   ArrowRight,
@@ -143,6 +144,15 @@ export function ConsentCard({ onAgree, onDecline }: ConsentCardProps) {
             >
               <Phone className="w-3.5 h-3.5" />
               (408) 512-8782
+            </a>
+            {" "}or Professor{" "}
+            <span className="font-medium text-foreground">Karen Gee</span> at{" "}
+            <a
+              href="mailto:karen.gee@missioncollege.edu"
+              className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+            >
+              <Mail className="w-3.5 h-3.5" />
+              karen.gee@missioncollege.edu
             </a>
             .
           </span>

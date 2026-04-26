@@ -13,7 +13,7 @@ interface EligibilityGateProps {
 
 export function EligibilityGate({ onPass }: EligibilityGateProps) {
   const [ageInput, setAgeInput] = useState("")
-  const [citizen, setCitizen] = useState(false)
+  const [residingInUS, setResidingInUS] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const parsedAge = useMemo(() => {
@@ -24,7 +24,7 @@ export function EligibilityGate({ onPass }: EligibilityGateProps) {
   }, [ageInput])
 
   const ageValid = parsedAge !== null && parsedAge >= 18 && parsedAge <= 120
-  const canContinue = ageValid && citizen
+  const canContinue = ageValid && residingInUS
 
   const handleSubmit = () => {
     if (parsedAge === null) {
@@ -39,8 +39,10 @@ export function EligibilityGate({ onPass }: EligibilityGateProps) {
       setError("Please enter a valid age.")
       return
     }
-    if (!citizen) {
-      setError("You must be a U.S. citizen to participate in this study.")
+    if (!residingInUS) {
+      setError(
+        "You must currently reside in the United States to participate in this study."
+      )
       return
     }
     onPass()
@@ -122,7 +124,7 @@ export function EligibilityGate({ onPass }: EligibilityGateProps) {
           />
         </motion.div>
 
-        {/* Citizenship */}
+        {/* Residency */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -130,20 +132,20 @@ export function EligibilityGate({ onPass }: EligibilityGateProps) {
           className="mb-5"
         >
           <label
-            htmlFor="citizen"
+            htmlFor="residing-us"
             className="flex items-start gap-3 p-3 rounded-xl bg-secondary/40 hover:bg-secondary/60 transition-colors cursor-pointer"
           >
             <Checkbox
-              id="citizen"
-              checked={citizen}
+              id="residing-us"
+              checked={residingInUS}
               onCheckedChange={(v) => {
-                setCitizen(v === true)
+                setResidingInUS(v === true)
                 setError(null)
               }}
               className="mt-0.5"
             />
             <span className="text-sm sm:text-base text-foreground/90 leading-relaxed">
-              I am a U.S. citizen.
+              Are you currently residing in the United States?
             </span>
           </label>
         </motion.div>

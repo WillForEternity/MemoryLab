@@ -14,9 +14,9 @@ interface VideoPlayerCardProps {
   totalVideos: number
 }
 
-// Per-noise-type playback volume. Music starts at 60s into the file.
+// Per-noise-type playback volume. Music starts at 105s into the file.
 const VOLUME: Record<string, number> = { music: 0.7 }
-const START_AT: Record<string, number> = { music: 60 }
+const START_AT: Record<string, number> = { music: 105 }
 
 export function VideoPlayerCard({ video, onComplete, videoIndex, totalVideos }: VideoPlayerCardProps) {
   const [isPlaying, setIsPlaying] = useState(false)
